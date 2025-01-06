@@ -185,18 +185,20 @@ In Go it would go something like this.
 import (
 	"context"
 
-	taskspb "google.golang.org/genproto/googleapis/cloud/tasks/v2"
+	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 	"google.golang.org/grpc"
 )
 
-conn, _ := grpc.Dial("localhost:8123", grpc.WithInsecure())
+conn, _ := grpc.Dial("localhost:8123", grpc.WithTransportCredentials(insecure.NewCredentials()))
 clientOpt := option.WithGRPCConn(conn)
 client, _ := NewClient(context.Background(), clientOpt)
 
 parent := "projects/test-project/locations/us-central1"
 createQueueRequest := taskspb.CreateQueueRequest{
     Parent: parent,
-    Queue: parent + "/queues/test",
+      Queue: &taskspb.Queue{
+        Name: parent + "/queues/test",
+      },
 }
 
 createQueueResp, _ := client.CreateQueue(context.Background(), &createQueueRequest)
