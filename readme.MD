@@ -68,14 +68,14 @@ docker run -p 8123:8123 tasks_emulator -host 0.0.0.0 -port 8123 -queue projects/
 ### Docker image
 Or even easier - pull and run it directly from GitHub Container Registry:
 ```sh
-docker run ghcr.io/aertje/cloud-tasks-emulator:latest
+docker run ghcr.io/System-Glitch/cloud-tasks-emulator:latest
 ```
 
 ### Docker Compose
 If you are planning on using docker-compose the above configuration translates to :
 ```yml
 gcloud-tasks-emulator:
-  image: ghcr.io/aertje/cloud-tasks-emulator:latest
+  image: ghcr.io/System-Glitch/cloud-tasks-emulator:latest
   command: -host 0.0.0.0 -port 8123 -queue "projects/dev/locations/here/queues/anotherq"
   ports:
     - "${TASKS_PORT:-8123}:8123"
