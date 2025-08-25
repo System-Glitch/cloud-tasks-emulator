@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"maps"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -179,7 +180,7 @@ func setInitialTaskState(taskState *tasks.Task, queueName string) {
 func updateStateForReschedule(task *Task) *tasks.Task {
 	// The lock is to ensure a consistent state when updating
 	task.stateMutex.Lock()
-	taskState := task.state
+	taskState := proto.Clone(task.state).(*tasks.Task)
 	queueState := task.queue.state
 
 	retryConfig := queueState.GetRetryConfig()
@@ -201,15 +202,15 @@ func updateStateForReschedule(task *Task) *tasks.Task {
 	nextScheduleTime := prevScheduleTime.AsTime().Add(protoBackoff.AsDuration())
 	taskState.ScheduleTime = timestamppb.New(nextScheduleTime)
 
-	frozenTaskState := proto.Clone(taskState).(*tasks.Task)
+	task.state = taskState
 	task.stateMutex.Unlock()
 
-	return frozenTaskState
+	return taskState
 }
 
 func updateStateForDispatch(task *Task) *tasks.Task {
 	task.stateMutex.Lock()
-	taskState := task.state
+	taskState := proto.Clone(task.state).(*tasks.Task)
 
 	dispatchTime := timestamppb.Now()
 
@@ -227,16 +228,16 @@ func updateStateForDispatch(task *Task) *tasks.Task {
 		}
 	}
 
-	frozenTaskState := proto.Clone(taskState).(*tasks.Task)
+	task.state = taskState
 	task.stateMutex.Unlock()
 
-	return frozenTaskState
+	return taskState
 }
 
-func updateStateAfterDispatch(task *Task, statusCode int) *tasks.Task {
+func updateStateAfterDispatch(task *Task, retry bool, statusCode int) *tasks.Task {
 	task.stateMutex.Lock()
 
-	taskState := task.state
+	taskState := proto.Clone(task.state).(*tasks.Task)
 
 	rpcCode := toRPCStatusCode(statusCode)
 	rpcCodeName := toCodeName(rpcCode)
@@ -251,10 +252,10 @@ func updateStateAfterDispatch(task *Task, statusCode int) *tasks.Task {
 
 	taskState.ResponseCount++
 
-	frozenTaskState := proto.Clone(taskState).(*tasks.Task)
+	task.state = taskState
 	task.stateMutex.Unlock()
 
-	return frozenTaskState
+	return taskState
 }
 
 func (task *Task) reschedule(retry bool, statusCode int) {
@@ -276,7 +277,7 @@ func (task *Task) reschedule(retry bool, statusCode int) {
 	}
 }
 
-func dispatch(retry bool, taskState *tasks.Task) int {
+func dispatch(taskState *tasks.Task) int {
 	client := &http.Client{}
 	client.Timeout = taskState.GetDispatchDeadline().AsDuration()
 
@@ -300,7 +301,7 @@ func dispatch(retry bool, taskState *tasks.Task) int {
 
 		req, _ = http.NewRequest(method, httpRequest.GetUrl(), bytes.NewBuffer(httpRequest.GetBody()))
 
-		headers = httpRequest.GetHeaders()
+		headers = maps.Clone(httpRequest.GetHeaders())
 
 		if auth := httpRequest.GetOidcToken(); auth != nil {
 			tokenStr := createOIDCToken(auth.ServiceAccountEmail, httpRequest.GetUrl(), auth.Audience)
@@ -351,10 +352,13 @@ func dispatch(retry bool, taskState *tasks.Task) int {
 }
 
 func (task *Task) doDispatch(retry bool) {
-	respCode := dispatch(retry, task.state)
+	task.stateMutex.Lock()
+	taskState := task.state
+	task.stateMutex.Unlock()
+	respCode := dispatch(taskState)
 
-	updateStateAfterDispatch(task, respCode)
-	task.reschedule(retry, respCode)
+	updateStateAfterDispatch(task, retry, respCode)
+	task.reschedule(retry, respCode) // TODO this should be inside the updateStateAfterDispatch because it checks the state
 }
 
 // Attempt tries to execute a task

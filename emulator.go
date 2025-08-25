@@ -147,6 +147,8 @@ func (s *Server) CreateQueue(ctx context.Context, in *tasks.CreateQueueRequest) 
 		name,
 		proto.Clone(queueState).(*tasks.Queue),
 		func(task *Task) {
+			task.stateMutex.Lock()
+			defer task.stateMutex.Unlock()
 			s.removeTask(task.state.GetName())
 		},
 	)
@@ -240,7 +242,9 @@ func (s *Server) ListTasks(ctx context.Context, in *tasks.ListTasksRequest) (*ta
 
 	for _, task := range queue.ts {
 		if task != nil {
+			task.stateMutex.Lock()
 			taskStates = append(taskStates, task.state)
+			task.stateMutex.Unlock()
 		}
 	}
 
@@ -259,6 +263,8 @@ func (s *Server) GetTask(ctx context.Context, in *tasks.GetTaskRequest) (*tasks.
 		return nil, status.Errorf(codes.FailedPrecondition, "The task no longer exists, though a task with this name existed recently. The task either successfully completed or was deleted.")
 	}
 
+	task.stateMutex.Lock()
+	defer task.stateMutex.Unlock()
 	return task.state, nil
 }
 
