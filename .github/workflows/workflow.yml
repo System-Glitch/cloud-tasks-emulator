@@ -3,7 +3,7 @@ on:
   push:
   pull_request:
 env:
-  IMAGE_NAME: cloud-tasks-emulator
+  IMAGE_NAME: ${{ github.repository }}
   REGISTRY: ghcr.io
 jobs:
   test:
