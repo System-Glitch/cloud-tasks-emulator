@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	tasks "google.golang.org/genproto/googleapis/cloud/tasks/v2"
 	v1 "google.golang.org/genproto/googleapis/iam/v1"
@@ -16,6 +17,7 @@ import (
 	status "google.golang.org/grpc/status"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
 )
@@ -342,13 +344,17 @@ func (i *arrayFlags) Set(value string) error {
 }
 
 // Creates an initial queue on the emulator
-func createInitialQueue(emulatorServer *Server, name string) {
+func createInitialQueue(emulatorServer *Server, name string, rateLimits *tasks.RateLimits, retryConfigs *tasks.RetryConfig) {
 	print(fmt.Sprintf("Creating initial queue %s\n", name))
 
 	r := regexp.MustCompile("/queues/[A-Za-z0-9-]+$")
 	parentName := r.ReplaceAllString(name, "")
 
-	queue := &tasks.Queue{Name: name}
+	queue := &tasks.Queue{
+		Name:        name,
+		RateLimits:  rateLimits,
+		RetryConfig: retryConfigs,
+	}
 	req := &tasks.CreateQueueRequest{
 		Parent: parentName,
 		Queue:  queue,
@@ -361,7 +367,20 @@ func createInitialQueue(emulatorServer *Server, name string) {
 }
 
 func main() {
-	var initialQueues arrayFlags
+	var (
+		initialQueues arrayFlags
+
+		// Rate limits
+		maxDispatchesPerSecond  int
+		maxBurstSize            int
+		maxConcurrentDispatches int
+
+		// Retry config
+		maxAttempts  int
+		minBackoffMs int
+		maxBackoffMs int
+		maxDoublings int
+	)
 
 	host := flag.String("host", "localhost", "The host name")
 	port := flag.String("port", "8123", "The port")
@@ -369,6 +388,15 @@ func main() {
 	hardResetOnPurgeQueue := flag.Bool("hard-reset-on-purge-queue", false, "Set to force the 'Purge Queue' call to perform a hard reset of all state (differs from production)")
 
 	flag.Var(&initialQueues, "queue", "A queue to create on startup (repeat as required)")
+
+	flag.IntVar(&maxDispatchesPerSecond, "max-dispatches", 500, "The maximum number of dispatches per second per queue. This only affects initial queues created with the -queue flag")
+	flag.IntVar(&maxBurstSize, "max-burst", 100, "The maximum burst per queue. This only affects initial queues created with the -queue flag")
+	flag.IntVar(&maxConcurrentDispatches, "max-concurrency", 1000, "The maximum number of concurrent running job per queue. This only affects initial queues created with the -queue flag")
+
+	flag.IntVar(&maxAttempts, "max-attempts", 100, "The maximum number of attempts for a single job. This only affects initial queues created with the -queue flag")
+	flag.IntVar(&maxDoublings, "max-doublings", 16, "The time between retries will double \"max-doublings\" times. This only affects initial queues created with the -queue flag")
+	flag.IntVar(&minBackoffMs, "min-backoff", 100, "The minimum backoff time (in ms) before retrying a job. This only affects initial queues created with the -queue flag")
+	flag.IntVar(&maxBackoffMs, "max-backoff", 3600000, "The maximum backoff time (in ms) before retrying a job. This only affects initial queues created with the -queue flag")
 
 	flag.Parse()
 
@@ -392,8 +420,21 @@ func main() {
 	emulatorServer.Options.HardResetOnPurgeQueue = *hardResetOnPurgeQueue
 	tasks.RegisterCloudTasksServer(grpcServer, emulatorServer)
 
+	rateLimits := &tasks.RateLimits{
+		MaxDispatchesPerSecond:  float64(maxDispatchesPerSecond),
+		MaxBurstSize:            int32(maxBurstSize),
+		MaxConcurrentDispatches: int32(maxConcurrentDispatches),
+	}
+	retryConfig := &tasks.RetryConfig{
+		MaxAttempts: int32(maxAttempts),
+		// MaxRetryDuration: nil, // not supported by the emulator
+		MinBackoff:   ptypes.DurationProto(time.Millisecond * time.Duration(minBackoffMs)),
+		MaxBackoff:   ptypes.DurationProto(time.Millisecond * time.Duration(maxBackoffMs)),
+		MaxDoublings: int32(maxDoublings),
+	}
+
 	for i := 0; i < len(initialQueues); i++ {
-		createInitialQueue(emulatorServer, initialQueues[i])
+		createInitialQueue(emulatorServer, initialQueues[i], rateLimits, retryConfig)
 	}
 
 	grpcServer.Serve(lis)

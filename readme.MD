@@ -35,6 +35,15 @@ go run ./ -host localhost \
   -queue projects/dev/locations/here/queues/anotherq
 ```
 
+You can provide a default rate limiting and retry config for the queues created this way with the following flags:
+- `-max-attempts`: The maximum number of attempts for a single job. (default `100`)
+- `-max-burst`: The maximum burst per queue. (default `100`)
+- `-max-concurrency`: The maximum number of concurrent running job per queue. (default `1000`)
+- `-max-dispatches`: The maximum number of dispatches per second per queue. (default `500`)
+- `-max-doublings`: The time between retries will double "max-doublings" times. (default `16`)
+- `-min-backoff`: The minimum backoff time (in ms) before retrying a job. (default `100`)
+- `-max-backoff`: The maximum backoff time (in ms) before retrying a job. (default `3600000`)
+
 Alternatively, you can define environment variables and then run the shell script `./emulator_from_env.sh` to start the emulator. The following environment variables are supported:
 
  ```sh
