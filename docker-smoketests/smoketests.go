@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -145,7 +145,7 @@ func fatalIfError(err error) {
 }
 
 func readRequestBody(req *http.Request) string {
-	body, err := ioutil.ReadAll(req.Body)
+	body, err := io.ReadAll(req.Body)
 	fatalIfError(err)
 	return string(body)
 }
@@ -157,17 +157,17 @@ func getUnverifiedIssuerFromJWT(tokenStr string) string {
 	return claims.Issuer
 }
 
-func parseOpenIDConnectToken(tokenStr string, keySet *jwk.Set) (*jwt.Token, *OpenIDConnectClaims) {
+func parseOpenIDConnectToken(tokenStr string, keySet jwk.Set) (*jwt.Token, *OpenIDConnectClaims) {
 
 	token, err := new(jwt.Parser).ParseWithClaims(
 		tokenStr,
 		&OpenIDConnectClaims{},
 		func(token *jwt.Token) (interface{}, error) {
 			keyId := token.Header["kid"].(string)
-			keys := keySet.LookupKeyID(keyId)
+			keys, _ := keySet.LookupKeyID(keyId)
 
 			var key rsa.PublicKey
-			err := keys[0].Raw(&key)
+			err := keys.Raw(&key)
 
 			return &key, err
 		},
@@ -187,7 +187,7 @@ func fetchJsonFromUrl(url string) map[string]interface{} {
 	res, err := client.Do(req)
 	fatalIfError(err)
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	fatalIfError(err)
 
 	var parsedBody map[string]interface{}
@@ -238,7 +238,7 @@ func main() {
 	discovery := fetchJsonFromUrl(issuer + "/.well-known/openid-configuration")
 
 	jwks_uri := discovery["jwks_uri"].(string)
-	keySet, err := jwk.Fetch(jwks_uri)
+	keySet, err := jwk.Fetch(context.Background(), jwks_uri)
 	fatalIfError(err)
 	log.Printf("Retrieved issuer keys from %v", jwks_uri)
 
