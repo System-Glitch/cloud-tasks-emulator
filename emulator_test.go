@@ -17,12 +17,12 @@ import (
 	"github.com/golang-jwt/jwt"
 
 	. "cloud.google.com/go/cloudtasks/apiv2"
+	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 	. "github.com/aertje/cloud-tasks-emulator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
-	taskspb "google.golang.org/genproto/googleapis/cloud/tasks/v2"
 	"google.golang.org/grpc"
 	grpcCodes "google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
@@ -733,7 +733,7 @@ func assertTaskListIsEmpty(t *testing.T, client *Client, queue *taskspb.Queue) {
 	tasksIterator := client.ListTasks(context.Background(), &listTasksRequest)
 	firstTask, err := tasksIterator.Next()
 	assert.Nil(t, firstTask, "Should not get a task in the tasks list")
-	assert.Same(t, iterator.Done, err, "task iterator should be done")
+	assert.ErrorIs(t, err, iterator.Done, "task iterator should be done")
 }
 
 func assertGetTaskFails(t *testing.T, expectCode grpcCodes.Code, client *Client, name string) {
